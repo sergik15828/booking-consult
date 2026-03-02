@@ -68,7 +68,7 @@ class BC_Availability {
 		if ($day < $today) return [];
 
 		$weekday = self::weekday_1_to_7($day);
-		$windows = BC_DB::get_working_hours_for_weekday($service_id, $weekday);
+		$windows = BC_DB::get_availability_windows($service_id, $date_ymd);
 		if (!$windows) return [];
 
 		$slots = [];

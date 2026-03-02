@@ -24,4 +24,5 @@ add_action('plugins_loaded', function () {
 	BC_REST::init();
 	BC_Shortcode::init();
 	BC_Admin::init();
+	BC_DB::maybe_upgrade();
 });

@@ -1,0 +1,127 @@
+.bcav-layout{
+    display:grid;
+    grid-template-columns: 420px 1fr;
+    gap:16px;
+    max-width: 1100px;
+}
+
+.bcav-card{
+    background:#fff;
+    border:1px solid #e5e7eb;
+    border-radius:14px;
+    padding:14px;
+    box-shadow: 0 12px 30px rgba(15,23,42,.06);
+}
+
+.bcav-title{
+    font-size:14px;
+    font-weight:700;
+    margin-bottom:10px;
+    color:#0f172a;
+}
+
+.bcav-subtitle{
+    font-size:12px;
+    font-weight:700;
+    color:#475569;
+    margin-bottom:8px;
+}
+
+.bcav-note{
+    margin-top:10px;
+    color:#64748b;
+    font-size:12px;
+}
+
+.bcav-grid{
+    display:grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap:10px;
+    max-height: 330px;
+    overflow:auto;
+    padding-right: 8px;
+}
+
+.bcav-day{
+    height:64px;
+    border-radius:12px;
+    border:1px solid #e6eefc;
+    background:#fff;
+    cursor:pointer;
+    text-align:center;
+    padding:8px;
+    box-shadow: 0 10px 22px rgba(15,23,42,.05);
+}
+
+.bcav-day .d{
+    font-weight:800;
+    font-size:16px;
+    line-height:1;
+}
+.bcav-day .m{
+    margin-top:4px;
+    font-size:12px;
+    color:#94a3b8;
+}
+
+.bcav-day.is-active{
+    border-color:#5b8cff;
+    box-shadow: 0 0 0 4px rgba(91,140,255,.18);
+}
+
+.bcav-day.is-open{
+    background:#eef6ff;
+    border-color:#b9d2ff;
+}
+
+.bcav-presets{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+}
+
+.bcav-preset{
+    border:1px solid #e6eefc;
+    background:#eef6ff;
+    color:#1f4ea8;
+    border-radius:12px;
+    padding:8px 12px;
+    font-weight:700;
+    cursor:pointer;
+}
+
+.bcav-windows{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+}
+
+.bcav-window{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    border:1px solid #e5e7eb;
+    border-radius:12px;
+    padding:10px 12px;
+    background:#fff;
+}
+
+.bcav-window b{ color:#0f172a; }
+
+.bcav-actions{
+    display:flex;
+    gap:10px;
+    margin-top:14px;
+}
+
+.bcav-hint{
+    margin-top:10px;
+    font-size:12px;
+    color:#334155;
+}
+.bcav-hint.is-error{ color:#b91c1c; }
+
+@media (max-width: 1100px){
+    .bcav-layout{ grid-template-columns: 1fr; }
+    .bcav-grid{ grid-template-columns: repeat(4, 1fr); }
+}

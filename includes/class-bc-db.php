@@ -17,17 +17,19 @@ class BC_DB {
 		$t_services = self::table('services');
 		$t_hours    = self::table('working_hours');
 		$t_appts    = self::table('appointments');
+		$t_av = self::table('availability');
 
 		$sql_services = "CREATE TABLE {$t_services} (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      title VARCHAR(190) NOT NULL,
-      duration_min SMALLINT UNSIGNED NOT NULL DEFAULT 60,
-      slot_step_min SMALLINT UNSIGNED NOT NULL DEFAULT 30,
-      active TINYINT(1) NOT NULL DEFAULT 1,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      KEY active (active)
-    ) {$charset_collate};";
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          title VARCHAR(190) NOT NULL,
+          duration_min SMALLINT UNSIGNED NOT NULL DEFAULT 60,
+          slot_step_min SMALLINT UNSIGNED NOT NULL DEFAULT 30,
+          presets_json LONGTEXT NULL,
+          active TINYINT(1) NOT NULL DEFAULT 1,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          KEY active (active)
+        ) {$charset_collate};";
 
 		$sql_hours = "CREATE TABLE {$t_hours} (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -58,9 +60,21 @@ class BC_DB {
       KEY status (status)
     ) {$charset_collate};";
 
+    $sql_av = "CREATE TABLE {$t_av} (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      service_id BIGINT UNSIGNED NOT NULL,
+      date DATE NOT NULL,
+      time_from TIME NOT NULL,
+      time_to TIME NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY service_date (service_id, date)
+    ) {$charset_collate};";
+
 		dbDelta($sql_services);
 		dbDelta($sql_hours);
 		dbDelta($sql_appts);
+		dbDelta($sql_av);
 
 		self::seed_defaults();
 	}
@@ -82,11 +96,18 @@ class BC_DB {
 			['Экспресс-консультация', 30, 30],
 		];
 
+		$default_presets = json_encode([
+          ['time_from'=>'11:00','time_to'=>'12:30','label'=>'11:00–12:30'],
+          ['time_from'=>'13:00','time_to'=>'14:30','label'=>'13:00–14:30'],
+          ['time_from'=>'17:00','time_to'=>'18:30','label'=>'17:00–18:30'],
+        ], JSON_UNESCAPED_UNICODE);
+
 		foreach ($services as $s) {
 			$wpdb->insert($t_services, [
 				'title' => $s[0],
 				'duration_min' => $s[1],
 				'slot_step_min' => $s[2],
+				'presets_json' => $default_presets,
 				'active' => 1
 			]);
 			$service_id = (int) $wpdb->insert_id;
@@ -195,4 +216,81 @@ class BC_DB {
 			return new WP_Error('exception', 'Ошибка сервера: ' . $e->getMessage());
 		}
 	}
+
+    public static function get_availability_windows($service_id, $date_ymd) {
+      global $wpdb;
+      $t = self::table('availability');
+      return $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM {$t} WHERE service_id=%d AND date=%s ORDER BY time_from ASC",
+        $service_id, $date_ymd
+      ), ARRAY_A);
+    }
+
+    public static function replace_availability_for_date($service_id, $date_ymd, $windows) {
+      global $wpdb;
+      $t = self::table('availability');
+
+      $wpdb->query('START TRANSACTION');
+
+      $del = $wpdb->delete($t, ['service_id' => $service_id, 'date' => $date_ymd]);
+      if ($del === false) {
+        $wpdb->query('ROLLBACK');
+        return new WP_Error('db_delete_failed', $wpdb->last_error ?: 'Delete failed');
+      }
+
+      foreach ($windows as $w) {
+        $ok = $wpdb->insert($t, [
+          'service_id' => $service_id,
+          'date' => $date_ymd,
+          'time_from' => $w['time_from'],
+          'time_to' => $w['time_to'],
+        ]);
+
+        if ($ok === false) {
+          $wpdb->query('ROLLBACK');
+          return new WP_Error('db_insert_failed', $wpdb->last_error ?: 'Insert failed');
+        }
+      }
+
+      $wpdb->query('COMMIT');
+      return true;
+    }
+
+    public static function maybe_upgrade() {
+      global $wpdb;
+      require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+      // 1) убедимся, что таблица availability существует (как мы делали раньше)
+      $t_av = self::table('availability');
+      $exists_av = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $t_av));
+      if ($exists_av !== $t_av) {
+        $charset_collate = $wpdb->get_charset_collate();
+        $sql_av = "CREATE TABLE {$t_av} (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          service_id BIGINT UNSIGNED NOT NULL,
+          date DATE NOT NULL,
+          time_from TIME NOT NULL,
+          time_to TIME NOT NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          KEY service_date (service_id, date)
+        ) {$charset_collate};";
+        dbDelta($sql_av);
+      }
+
+      // 2) добавим колонку presets_json в services, если её нет
+      $t_services = self::table('services');
+      $col = $wpdb->get_var($wpdb->prepare(
+        "SELECT COLUMN_NAME
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = %s
+           AND COLUMN_NAME = 'presets_json'",
+        $t_services
+      ));
+
+      if (!$col) {
+        $wpdb->query("ALTER TABLE {$t_services} ADD COLUMN presets_json LONGTEXT NULL");
+      }
+    }
 }

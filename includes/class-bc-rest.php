@@ -38,6 +38,19 @@ class BC_REST {
 			'callback' => [__CLASS__, 'post_book'],
 			'permission_callback' => [__CLASS__, 'require_logged_in'],
 		]);
+
+		register_rest_route('bc/v1', '/admin/availability', [
+          'methods' => 'GET',
+          'callback' => [__CLASS__, 'admin_get_availability'],
+          'permission_callback' => function(){ return current_user_can('manage_options'); },
+          'args' => ['service_id'=>['required'=>true]],
+        ]);
+
+        register_rest_route('bc/v1', '/admin/availability', [
+          'methods' => 'POST',
+          'callback' => [__CLASS__, 'admin_save_availability'],
+          'permission_callback' => function(){ return current_user_can('manage_options'); },
+        ]);
 	}
 
 	public static function require_logged_in() {
@@ -107,4 +120,68 @@ class BC_REST {
 			'appointment_id' => $id,
 		]);
 	}
+
+    public static function admin_get_availability(WP_REST_Request $req) {
+      $service_id = (int)$req->get_param('service_id');
+
+      [$from, $to] = BC_Availability::month_range_from_today();
+
+      $days = [];
+      $cursor = clone $from;
+
+      while ($cursor <= $to) {
+        $d = $cursor->format('Y-m-d');
+        $wins = BC_DB::get_availability_windows($service_id, $d);
+
+        $days[] = [
+          'date' => $d,
+          'has_windows' => !empty($wins),
+          'windows' => array_map(function($w){
+            return [
+              'time_from' => substr($w['time_from'],0,5),
+              'time_to'   => substr($w['time_to'],0,5),
+            ];
+          }, $wins),
+        ];
+
+        $cursor->modify('+1 day');
+      }
+
+      return rest_ensure_response(['days'=>$days]);
+    }
+
+    public static function admin_save_availability(WP_REST_Request $req) {
+      $nonce = $req->get_header('x_wp_nonce');
+      if (!wp_verify_nonce($nonce, 'wp_rest')) {
+        return new WP_Error('bad_nonce', 'Security check failed.', ['status'=>403]);
+      }
+
+      $service_id = (int)$req->get_param('service_id');
+      $date = sanitize_text_field($req->get_param('date')); // Y-m-d
+      $windows = $req->get_param('windows'); // [{time_from:"11:00", time_to:"12:30"}, ...]
+
+      if (!$service_id || !$date || !is_array($windows)) {
+        return new WP_Error('bad_request', 'Некорректные данные', ['status'=>400]);
+      }
+
+      $norm = [];
+      foreach ($windows as $w) {
+        $from = sanitize_text_field($w['time_from'] ?? '');
+        $to   = sanitize_text_field($w['time_to'] ?? '');
+
+        if (!preg_match('/^\d{2}:\d{2}$/', $from) || !preg_match('/^\d{2}:\d{2}$/', $to)) continue;
+
+        $from_db = $from . ':00';
+        $to_db   = $to . ':00';
+
+        if (strtotime($from_db) >= strtotime($to_db)) continue;
+
+        $norm[] = ['time_from'=>$from_db,'time_to'=>$to_db];
+      }
+
+      $res = BC_DB::replace_availability_for_date($service_id, $date, $norm);
+      if (is_wp_error($res)) return $res;
+
+      return rest_ensure_response(['ok'=>true]);
+    }
 }
