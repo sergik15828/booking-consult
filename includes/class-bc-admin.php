@@ -150,7 +150,7 @@ class BC_Admin {
 		$ts = BC_DB::table('services');
 
 		$rows = $wpdb->get_results("
-      SELECT a.*, s.title AS service_title
+      SELECT a.*, COALESCE(NULLIF(a.service_title, ''), s.title) AS service_label
       FROM {$t} a
       LEFT JOIN {$ts} s ON s.id=a.service_id
       ORDER BY a.created_at DESC
@@ -173,11 +173,11 @@ class BC_Admin {
 				</tr>
 				</thead>
 				<tbody>
-				<?php foreach ($rows as $r): ?>
-					<tr>
-						<td><?php echo (int)$r['id']; ?></td>
-						<td><?php echo esc_html($r['service_title'] ?: ('#'.$r['service_id'])); ?></td>
-						<td><?php echo esc_html($r['starts_at'] . ' — ' . $r['ends_at']); ?></td>
+					<?php foreach ($rows as $r): ?>
+						<tr>
+							<td><?php echo (int)$r['id']; ?></td>
+							<td><?php echo esc_html($r['service_label'] ?: ('#'.$r['service_id'])); ?></td>
+							<td><?php echo esc_html($r['starts_at'] . ' — ' . $r['ends_at']); ?></td>
 						<td><?php echo esc_html($r['customer_name']); ?></td>
 						<td>
 							<?php echo esc_html($r['customer_email']); ?><br/>
@@ -197,22 +197,28 @@ class BC_Admin {
       if (empty($_GET['page']) || $_GET['page'] !== 'bc_availability') return;
 
       $services = BC_DB::get_services_active();
-      $service_id = isset($_GET['service_id']) ? (int)$_GET['service_id'] : (int)($services[0]['id'] ?? 0);
-      $service = $service_id ? BC_DB::get_service($service_id) : null;
+      $fallback_presets = [
+        ['time_from'=>'11:00','time_to'=>'12:30','label'=>'11:00–12:30'],
+        ['time_from'=>'13:00','time_to'=>'14:30','label'=>'13:00–14:30'],
+        ['time_from'=>'17:00','time_to'=>'18:30','label'=>'17:00–18:30'],
+      ];
 
-      $presets = [];
-      if ($service && !empty($service['presets_json'])) {
-        $decoded = json_decode($service['presets_json'], true);
-        if (is_array($decoded)) $presets = $decoded;
-      }
+      $service_presets = [];
+      foreach ($services as $service) {
+        $presets = [];
 
-      // fallback если вдруг пусто
-      if (!$presets) {
-        $presets = [
-          ['time_from'=>'11:00','time_to'=>'12:30','label'=>'11:00–12:30'],
-          ['time_from'=>'13:00','time_to'=>'14:30','label'=>'13:00–14:30'],
-          ['time_from'=>'17:00','time_to'=>'18:30','label'=>'17:00–18:30'],
-        ];
+        if (!empty($service['presets_json'])) {
+          $decoded = json_decode($service['presets_json'], true);
+          if (is_array($decoded)) {
+            $presets = $decoded;
+          }
+        }
+
+        if (!$presets) {
+          $presets = $fallback_presets;
+        }
+
+        $service_presets[(int) $service['id']] = $presets;
       }
 
       wp_enqueue_style('bc-admin-availability', BC_PLUGIN_URL . 'assets/admin-availability.css', [], BC_PLUGIN_VERSION);
@@ -221,7 +227,7 @@ class BC_Admin {
       wp_localize_script('bc-admin-availability', 'BC_ADMIN_AV', [
         'restUrl' => esc_url_raw(rest_url('bc/v1')),
         'nonce' => wp_create_nonce('wp_rest'),
-        'presets' => $presets,
+        'servicePresets' => $service_presets,
       ]);
     }
 
@@ -229,49 +235,47 @@ class BC_Admin {
       if (!current_user_can('manage_options')) return;
 
       $services = BC_DB::get_services_active();
-      $service_id = isset($_GET['service_id']) ? (int)$_GET['service_id'] : (int)($services[0]['id'] ?? 0);
       ?>
       <div class="wrap">
         <h1>Доступность (свободные даты)</h1>
 
-        <form method="get" style="margin: 10px 0 16px;">
-          <input type="hidden" name="page" value="bc_availability" />
-          <label><strong>Услуга:</strong></label>
-          <select name="service_id" onchange="this.form.submit()">
-            <?php foreach ($services as $s): ?>
-              <option value="<?php echo (int)$s['id']; ?>" <?php selected((int)$s['id'] === $service_id); ?>>
-                <?php echo esc_html($s['title']); ?>
-              </option>
-            <?php endforeach; ?>
-          </select>
-        </form>
+        <div class="bcav-services">
+          <?php foreach ($services as $service): ?>
+            <section class="bcav-service">
+              <h2 class="bcav-service-title"><?php echo esc_html($service['title']); ?></h2>
 
-        <div class="bcav-layout" data-service-id="<?php echo (int)$service_id; ?>">
-          <div class="bcav-card">
-            <div class="bcav-title">Выберите дату</div>
-            <div class="bcav-grid" id="bcav-days"></div>
-            <div class="bcav-note">Показаны даты: сегодня → 30 дней вперёд</div>
-          </div>
+              <div class="bcav-layout" data-service-id="<?php echo (int) $service['id']; ?>">
+                <div class="bcav-card">
+                  <div class="bcav-title">Выберите дату</div>
+                  <div class="bcav-grid" data-role="days"></div>
+                  <div class="bcav-note">Показаны даты: сегодня → 30 дней вперёд</div>
+                </div>
 
-          <div class="bcav-card">
-            <div class="bcav-title">
-              Интервалы на дату: <span id="bcav-picked-date">—</span>
-            </div>
+                <div class="bcav-card">
+                  <div class="bcav-title">
+                    Интервалы на дату: <span data-role="picked-date">—</span>
+                  </div>
 
-            <div class="bcav-subtitle">Пресеты</div>
-            <div class="bcav-presets" id="bcav-presets"></div>
+                  <div class="bcav-subtitle">Пресеты</div>
+                  <div class="bcav-presets" data-role="presets"></div>
 
-            <div class="bcav-subtitle" style="margin-top:14px;">Выбранные интервалы</div>
-            <div class="bcav-windows" id="bcav-windows"></div>
+                  <div class="bcav-subtitle" style="margin-top:14px;">Выбранные интервалы</div>
+                  <div class="bcav-windows" data-role="windows"></div>
 
-            <div class="bcav-actions">
-              <button class="button button-secondary" type="button" id="bcav-clear">Очистить дату</button>
-              <button class="button button-primary" type="button" id="bcav-save">Сохранить</button>
-            </div>
+                  <div class="bcav-actions">
+                    <button class="button button-secondary" type="button" data-action="clear">Очистить дату</button>
+                    <button class="button button-primary" type="button" data-action="save">Сохранить</button>
+                  </div>
 
-            <div class="bcav-hint" id="bcav-hint"></div>
-          </div>
+                  <div class="bcav-hint" data-role="hint"></div>
+                </div>
+              </div>
+            </section>
+          <?php endforeach; ?>
         </div>
+        <?php if (!$services): ?>
+          <div class="notice notice-info inline"><p>Нет активных услуг.</p></div>
+        <?php endif; ?>
       </div>
       <?php
     }
