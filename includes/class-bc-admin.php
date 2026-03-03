@@ -380,7 +380,8 @@ class BC_Admin {
     public static function assets($hook) {
       if (empty($_GET['page']) || $_GET['page'] !== 'bc_availability') return;
 
-      $service_id = isset($_GET['service_id']) ? (int)$_GET['service_id'] : 0;
+      $services = BC_DB::get_services_active();
+      $service_id = isset($_GET['service_id']) ? (int)$_GET['service_id'] : (int)($services[0]['id'] ?? 0);
       $service = $service_id ? BC_DB::get_service($service_id) : null;
 
       $presets = [];
