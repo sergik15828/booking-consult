@@ -15,7 +15,6 @@ class BC_DB {
 		$charset_collate = $wpdb->get_charset_collate();
 
 		$t_services = self::table('services');
-		$t_hours    = self::table('working_hours');
 		$t_appts    = self::table('appointments');
 		$t_av = self::table('availability');
 
@@ -30,17 +29,6 @@ class BC_DB {
           PRIMARY KEY (id),
           KEY active (active)
         ) {$charset_collate};";
-
-		$sql_hours = "CREATE TABLE {$t_hours} (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-      service_id BIGINT UNSIGNED NOT NULL,
-      weekday TINYINT UNSIGNED NOT NULL, /* 1=Mon ... 7=Sun */
-      time_from TIME NOT NULL,
-      time_to TIME NOT NULL,
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (id),
-      KEY service_weekday (service_id, weekday)
-    ) {$charset_collate};";
 
 		$sql_appts = "CREATE TABLE {$t_appts} (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -72,7 +60,6 @@ class BC_DB {
     ) {$charset_collate};";
 
 		dbDelta($sql_services);
-		dbDelta($sql_hours);
 		dbDelta($sql_appts);
 		dbDelta($sql_av);
 
@@ -83,7 +70,6 @@ class BC_DB {
 		global $wpdb;
 
 		$t_services = self::table('services');
-		$t_hours    = self::table('working_hours');
 
 		$count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$t_services}");
 		if ($count > 0) return;
@@ -110,25 +96,6 @@ class BC_DB {
 				'presets_json' => $default_presets,
 				'active' => 1
 			]);
-			$service_id = (int) $wpdb->insert_id;
-
-			// Дефолт: Пн-Пт 11:00-18:30, Сб 11:00-14:30, Вс выходной (как на твоём UI похоже)
-			$hours = [
-				[1, '11:00:00', '18:30:00'],
-				[2, '11:00:00', '18:30:00'],
-				[3, '11:00:00', '18:30:00'],
-				[4, '11:00:00', '18:30:00'],
-				[5, '11:00:00', '18:30:00'],
-				[6, '11:00:00', '14:30:00'],
-			];
-			foreach ($hours as $h) {
-				$wpdb->insert($t_hours, [
-					'service_id' => $service_id,
-					'weekday' => $h[0],
-					'time_from' => $h[1],
-					'time_to' => $h[2],
-				]);
-			}
 		}
 	}
 
@@ -142,15 +109,6 @@ class BC_DB {
 		global $wpdb;
 		$t = self::table('services');
 		return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$t} WHERE id=%d", $service_id), ARRAY_A);
-	}
-
-	public static function get_working_hours_for_weekday($service_id, $weekday) {
-		global $wpdb;
-		$t = self::table('working_hours');
-		return $wpdb->get_results($wpdb->prepare(
-			"SELECT * FROM {$t} WHERE service_id=%d AND weekday=%d ORDER BY time_from ASC",
-			$service_id, $weekday
-		), ARRAY_A);
 	}
 
 	public static function get_appointments_in_range($service_id, $from_dt, $to_dt) {

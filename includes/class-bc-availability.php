@@ -8,11 +8,6 @@ class BC_Availability {
 		return $tz ?: new DateTimeZone('UTC');
 	}
 
-	private static function weekday_1_to_7(DateTime $dt) {
-		// PHP N: 1 (Mon) .. 7 (Sun)
-		return (int) $dt->format('N');
-	}
-
 	public static function month_range_from_today() {
 		$tz = self::wp_tz();
 		$from = new DateTime('now', $tz);
@@ -67,7 +62,6 @@ class BC_Availability {
 		$today->setTime(0,0,0);
 		if ($day < $today) return [];
 
-		$weekday = self::weekday_1_to_7($day);
 		$windows = BC_DB::get_availability_windows($service_id, $date_ymd);
 		if (!$windows) return [];
 
