@@ -50,9 +50,6 @@ class BC_Availability {
 		$service = BC_DB::get_service($service_id);
 		if (!$service || (int)$service['active'] !== 1) return [];
 
-		$duration = (int) $service['duration_min'];
-		$step = (int) $service['slot_step_min'];
-
 		$tz = self::wp_tz();
 		$day = DateTime::createFromFormat('Y-m-d H:i:s', $date_ymd . ' 00:00:00', $tz);
 		if (!$day) return [];
@@ -72,27 +69,19 @@ class BC_Availability {
 			$to   = DateTime::createFromFormat('Y-m-d H:i:s', $date_ymd . ' ' . $w['time_to'], $tz);
 			if (!$from || !$to) continue;
 
-			$cursor = clone $from;
+			// На фронте показываем именно окна доступности, заданные в админке.
+			$slot_start = clone $from;
+			$slot_end = clone $to;
+			if ($slot_end <= $slot_start) continue;
 
-			while (true) {
-				$slot_start = clone $cursor;
-				$slot_end = clone $slot_start;
-				$slot_end->modify("+{$duration} minutes");
-
-				// слот должен целиком помещаться
-				if ($slot_end > $to) break;
-
-				// если сегодня — слоты раньше "сейчас" убираем
-				$now = new DateTime('now', $tz);
-				if ($slot_start >= $now) {
-					$slots[] = [
-						'starts_at' => $slot_start->format('Y-m-d H:i:s'),
-						'ends_at'   => $slot_end->format('Y-m-d H:i:s'),
-						'label'     => $slot_start->format('H:i') . '–' . $slot_end->format('H:i'),
-					];
-				}
-
-				$cursor->modify("+{$step} minutes");
+			// если сегодня — слоты раньше "сейчас" убираем
+			$now = new DateTime('now', $tz);
+			if ($slot_start >= $now) {
+				$slots[] = [
+					'starts_at' => $slot_start->format('Y-m-d H:i:s'),
+					'ends_at'   => $slot_end->format('Y-m-d H:i:s'),
+					'label'     => $slot_start->format('H:i') . '–' . $slot_end->format('H:i'),
+				];
 			}
 		}
 
