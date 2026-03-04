@@ -76,10 +76,17 @@ class BC_REST {
 		$date = sanitize_text_field($req->get_param('date')); // Y-m-d
 		$slots = BC_Availability::slots_for_date($service_id, $date);
 
-		return rest_ensure_response([
+		$response = [
 			'date' => $date,
 			'slots' => $slots
-		]);
+		];
+
+		$debug = (int)$req->get_param('_debug') === 1;
+		if ($debug) {
+			$response['debug'] = BC_Availability::debug_for_date($service_id, $date);
+		}
+
+		return rest_ensure_response($response);
 	}
 
 	public static function post_book(WP_REST_Request $req) {

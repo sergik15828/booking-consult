@@ -55,9 +55,6 @@ class BC_Availability {
 		$service = BC_DB::get_service($service_id);
 		if (!$service || (int)$service['active'] !== 1) return [];
 
-		$duration = (int) $service['duration_min'];
-		$step = (int) $service['slot_step_min'];
-
 		$tz = self::wp_tz();
 		$day = DateTime::createFromFormat('Y-m-d H:i:s', $date_ymd . ' 00:00:00', $tz);
 		if (!$day) return [];
@@ -67,63 +64,74 @@ class BC_Availability {
 		$today->setTime(0,0,0);
 		if ($day < $today) return [];
 
-		$weekday = self::weekday_1_to_7($day);
+		// Строгая логика: доступны только интервалы, явно выбранные админом на эту дату.
 		$windows = BC_DB::get_availability_windows($service_id, $date_ymd);
 		if (!$windows) return [];
 
 		$slots = [];
-
+		$now = new DateTime('now', $tz);
 		foreach ($windows as $w) {
-			$from = DateTime::createFromFormat('Y-m-d H:i:s', $date_ymd . ' ' . $w['time_from'], $tz);
-			$to   = DateTime::createFromFormat('Y-m-d H:i:s', $date_ymd . ' ' . $w['time_to'], $tz);
-			if (!$from || !$to) continue;
+			$slot_start = DateTime::createFromFormat('Y-m-d H:i:s', $date_ymd . ' ' . $w['time_from'], $tz);
+			$slot_end   = DateTime::createFromFormat('Y-m-d H:i:s', $date_ymd . ' ' . $w['time_to'], $tz);
+			if (!$slot_start || !$slot_end || $slot_end <= $slot_start) continue;
+			if ($slot_start < $now) continue;
 
-			$cursor = clone $from;
+			$slots[] = [
+				'starts_at' => $slot_start->format('Y-m-d H:i:s'),
+				'ends_at'   => $slot_end->format('Y-m-d H:i:s'),
+				'label'     => $slot_start->format('H:i') . '–' . $slot_end->format('H:i'),
+			];
+		}
 
-			while (true) {
-				$slot_start = clone $cursor;
-				$slot_end = clone $slot_start;
-				$slot_end->modify("+{$duration} minutes");
+		return $slots;
+	}
 
-				// слот должен целиком помещаться
-				if ($slot_end > $to) break;
+	public static function debug_for_date($service_id, $date_ymd) {
+		$service = BC_DB::get_service($service_id);
+		$tz = self::wp_tz();
 
-				// если сегодня — слоты раньше "сейчас" убираем
-				$now = new DateTime('now', $tz);
-				if ($slot_start >= $now) {
-					$slots[] = [
-						'starts_at' => $slot_start->format('Y-m-d H:i:s'),
-						'ends_at'   => $slot_end->format('Y-m-d H:i:s'),
-						'label'     => $slot_start->format('H:i') . '–' . $slot_end->format('H:i'),
+		$day = DateTime::createFromFormat('Y-m-d H:i:s', $date_ymd . ' 00:00:00', $tz);
+		$today = new DateTime('now', $tz);
+		$today->setTime(0, 0, 0);
+
+		$weekday = $day ? self::weekday_1_to_7($day) : null;
+		$availability = BC_DB::get_availability_windows($service_id, $date_ymd);
+		$working = $weekday ? BC_DB::get_working_hours_for_weekday($service_id, $weekday) : [];
+
+		$presets = [];
+		if ($service && !empty($service['presets_json'])) {
+			$decoded = json_decode((string)$service['presets_json'], true);
+			if (is_array($decoded)) {
+				foreach ($decoded as $p) {
+					$presets[] = [
+						'time_from' => (string)($p['time_from'] ?? ''),
+						'time_to' => (string)($p['time_to'] ?? ''),
+						'label' => (string)($p['label'] ?? ''),
 					];
 				}
-
-				$cursor->modify("+{$step} minutes");
 			}
 		}
 
-		if (!$slots) return [];
+		$appts = BC_DB::get_appointments_in_range($service_id, $date_ymd . ' 00:00:00', $date_ymd . ' 23:59:59');
 
-		// Убираем занятые
-		$range_from = $date_ymd . ' 00:00:00';
-		$range_to   = $date_ymd . ' 23:59:59';
-		$appts = BC_DB::get_appointments_in_range($service_id, $range_from, $range_to);
-
-		if (!$appts) return $slots;
-
-		$free = [];
-		foreach ($slots as $s) {
-			$taken = false;
-			foreach ($appts as $a) {
-				// пересечение
-				if ($a['starts_at'] < $s['ends_at'] && $a['ends_at'] > $s['starts_at']) {
-					$taken = true;
-					break;
-				}
-			}
-			if (!$taken) $free[] = $s;
-		}
-
-		return $free;
+		return [
+			'timezone' => $tz->getName(),
+			'service_exists' => (bool)$service,
+			'service_active' => (bool)($service && (int)$service['active'] === 1),
+			'service_duration_min' => $service ? (int)$service['duration_min'] : null,
+			'service_step_min' => $service ? (int)$service['slot_step_min'] : null,
+			'date' => $date_ymd,
+			'day_valid' => (bool)$day,
+			'is_past_date' => $day ? ($day < $today) : null,
+			'weekday_1_7' => $weekday,
+			'availability_windows_count' => is_array($availability) ? count($availability) : 0,
+			'availability_windows' => is_array($availability) ? $availability : [],
+			'working_hours_count' => is_array($working) ? count($working) : 0,
+			'working_hours' => is_array($working) ? $working : [],
+			'presets_count' => count($presets),
+			'presets' => $presets,
+			'appointments_count' => is_array($appts) ? count($appts) : 0,
+			'appointments' => is_array($appts) ? $appts : [],
+		];
 	}
 }

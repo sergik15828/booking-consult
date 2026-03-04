@@ -175,21 +175,6 @@ class BC_DB {
 		$wpdb->query('START TRANSACTION');
 
 		try {
-			// проверка пересечений
-			$overlap = (int) $wpdb->get_var($wpdb->prepare(
-				"SELECT COUNT(*) FROM {$t}
-         WHERE service_id=%d AND status='booked'
-           AND starts_at < %s AND ends_at > %s",
-				$data['service_id'],
-				$data['ends_at'],
-				$data['starts_at']
-			));
-
-			if ($overlap > 0) {
-				$wpdb->query('ROLLBACK');
-				return new WP_Error('slot_taken', 'Этот слот уже занят. Обновите страницу и выберите другой.');
-			}
-
 			$ok = $wpdb->insert($t, [
 				'service_id' => $data['service_id'],
 				'user_id' => $data['user_id'],
