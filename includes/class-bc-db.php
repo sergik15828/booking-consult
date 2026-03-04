@@ -33,6 +33,7 @@ class BC_DB {
 		$sql_appts = "CREATE TABLE {$t_appts} (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       service_id BIGINT UNSIGNED NOT NULL,
+      service_title VARCHAR(190) NULL,
       user_id BIGINT UNSIGNED NULL,
       customer_name VARCHAR(190) NOT NULL,
       customer_email VARCHAR(190) NULL,
@@ -74,12 +75,11 @@ class BC_DB {
 		$count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$t_services}");
 		if ($count > 0) return;
 
-		// 4 услуги (примерные длительности/шаги — поменяешь в админке)
+		// 3 услуги (примерные длительности/шаги — поменяешь в админке)
 		$services = [
 			['Индивидуальная сессия', 60, 30],
 			['Разбор запроса',        45, 15],
 			['Сопровождение',         90, 30],
-			['Экспресс-консультация', 30, 30],
 		];
 
 		$default_presets = json_encode([
@@ -129,6 +129,8 @@ class BC_DB {
 	public static function create_appointment($data) {
 		global $wpdb;
 		$t = self::table('appointments');
+    $service = self::get_service((int) $data['service_id']);
+    $service_title = $service['title'] ?? '';
 
 		$wpdb->query('START TRANSACTION');
 
@@ -150,6 +152,7 @@ class BC_DB {
 
 			$ok = $wpdb->insert($t, [
 				'service_id' => $data['service_id'],
+				'service_title' => $service_title,
 				'user_id' => $data['user_id'],
 				'customer_name' => $data['customer_name'],
 				'customer_email' => $data['customer_email'],
@@ -236,6 +239,8 @@ class BC_DB {
         dbDelta($sql_av);
       }
 
+      $t_appts = self::table('appointments');
+
       // 2) добавим колонку presets_json в services, если её нет
       $t_services = self::table('services');
       $col = $wpdb->get_var($wpdb->prepare(
@@ -249,6 +254,51 @@ class BC_DB {
 
       if (!$col) {
         $wpdb->query("ALTER TABLE {$t_services} ADD COLUMN presets_json LONGTEXT NULL");
+      }
+
+      // 3) добавим service_title в appointments, если его нет
+      $appts_col = $wpdb->get_var($wpdb->prepare(
+        "SELECT COLUMN_NAME
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = %s
+           AND COLUMN_NAME = 'service_title'",
+        $t_appts
+      ));
+
+      if (!$appts_col) {
+        $wpdb->query("ALTER TABLE {$t_appts} ADD COLUMN service_title VARCHAR(190) NULL AFTER service_id");
+      }
+
+      // 4) заполним service_title для существующих записей из текущих услуг
+      $wpdb->query("
+        UPDATE {$t_appts} a
+        INNER JOIN {$t_services} s ON s.id = a.service_id
+        SET a.service_title = s.title
+        WHERE a.service_title IS NULL OR a.service_title = ''
+      ");
+
+      // 5) удаляем legacy 4-ю дефолтную услугу и её доступность
+      $legacy_service_ids = $wpdb->get_col($wpdb->prepare(
+        "SELECT id FROM {$t_services} WHERE title = %s",
+        'Экспресс-консультация'
+      ));
+
+      if ($legacy_service_ids) {
+        foreach ($legacy_service_ids as $legacy_service_id) {
+          $legacy_service_id = (int) $legacy_service_id;
+
+          $wpdb->update(
+            $t_appts,
+            ['service_title' => 'Экспресс-консультация'],
+            ['service_id' => $legacy_service_id],
+            ['%s'],
+            ['%d']
+          );
+
+          $wpdb->delete($t_av, ['service_id' => $legacy_service_id], ['%d']);
+          $wpdb->delete($t_services, ['id' => $legacy_service_id], ['%d']);
+        }
       }
     }
 }
