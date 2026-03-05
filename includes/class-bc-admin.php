@@ -149,6 +149,23 @@ class BC_Admin {
 		$t = BC_DB::table('appointments');
 		$ts = BC_DB::table('services');
 
+		if (isset($_POST['bc_delete_appointment']) && check_admin_referer('bc_delete_appointment')) {
+			$appointment_id = (int) ($_POST['appointment_id'] ?? 0);
+
+			if ($appointment_id > 0) {
+				$deleted = $wpdb->delete($t, ['id' => $appointment_id], ['%d']);
+				if ($deleted === false) {
+					echo '<div class="notice notice-error"><p>Не удалось удалить запись: ' . esc_html($wpdb->last_error ?: 'unknown') . '</p></div>';
+				} elseif ($deleted === 0) {
+					echo '<div class="notice notice-warning"><p>Запись не найдена или уже удалена.</p></div>';
+				} else {
+					echo '<div class="notice notice-success"><p>Запись удалена.</p></div>';
+				}
+			} else {
+				echo '<div class="notice notice-error"><p>Некорректный ID записи.</p></div>';
+			}
+		}
+
 		$rows = $wpdb->get_results("
       SELECT a.*, COALESCE(NULLIF(a.service_title, ''), s.title) AS service_label
       FROM {$t} a
@@ -162,19 +179,20 @@ class BC_Admin {
 			<h1>Записи</h1>
 			<table class="widefat striped">
 				<thead>
-				<tr>
-					<th>ID</th>
-					<th>Услуга</th>
-					<th>Дата/время</th>
-					<th>Клиент</th>
-					<th>Контакты</th>
-					<th>Статус</th>
-					<th>Создано</th>
-				</tr>
-				</thead>
-				<tbody>
-					<?php foreach ($rows as $r): ?>
-						<tr>
+					<tr>
+						<th>ID</th>
+						<th>Услуга</th>
+						<th>Дата/время</th>
+						<th>Клиент</th>
+						<th>Контакты</th>
+						<th>Статус</th>
+						<th>Создано</th>
+						<th>Действия</th>
+					</tr>
+					</thead>
+					<tbody>
+						<?php foreach ($rows as $r): ?>
+							<tr>
 							<td><?php echo (int)$r['id']; ?></td>
 							<td><?php echo esc_html($r['service_label'] ?: ('#'.$r['service_id'])); ?></td>
 							<td><?php echo esc_html($r['starts_at'] . ' — ' . $r['ends_at']); ?></td>
@@ -182,14 +200,21 @@ class BC_Admin {
 						<td>
 							<?php echo esc_html($r['customer_email']); ?><br/>
 							<?php echo esc_html($r['customer_phone']); ?>
-						</td>
-						<td><?php echo esc_html($r['status']); ?></td>
-						<td><?php echo esc_html($r['created_at']); ?></td>
-					</tr>
-				<?php endforeach; ?>
-				</tbody>
-			</table>
-		</div>
+							</td>
+							<td><?php echo esc_html($r['status']); ?></td>
+							<td><?php echo esc_html($r['created_at']); ?></td>
+							<td>
+								<form method="post" onsubmit="return confirm('Удалить запись #' + <?php echo (int)$r['id']; ?> + '?');">
+									<?php wp_nonce_field('bc_delete_appointment'); ?>
+									<input type="hidden" name="appointment_id" value="<?php echo (int)$r['id']; ?>" />
+									<button type="submit" name="bc_delete_appointment" value="1" class="button button-link-delete">Удалить</button>
+								</form>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+				</table>
+			</div>
 		<?php
 	}
 
