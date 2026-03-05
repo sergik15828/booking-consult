@@ -115,10 +115,90 @@ class BC_REST {
 
 		if (is_wp_error($id)) return $id;
 
+		$service = BC_DB::get_service($service_id);
+		$service_title = $service['title'] ?? ('#' . $service_id);
+		self::send_booking_emails([
+			'appointment_id' => $id,
+			'service_title' => $service_title,
+			'starts_at' => $starts_at,
+			'ends_at' => $ends_at,
+			'customer_name' => $customer_name,
+			'customer_email' => $customer_email,
+			'customer_phone' => $customer_phone,
+			'notes' => $notes,
+		]);
+
 		return rest_ensure_response([
 			'ok' => true,
 			'appointment_id' => $id,
 		]);
+	}
+
+	private static function send_booking_emails($data) {
+		$headers = ['Content-Type: text/plain; charset=UTF-8'];
+
+		self::send_customer_confirmation($data, $headers);
+		self::send_admin_notification($data, $headers);
+	}
+
+	private static function send_customer_confirmation($data, $headers) {
+		$email = $data['customer_email'] ?? '';
+		if (!is_email($email)) return;
+
+		$subject = 'Подтверждение записи / Potvrdenie rezervácie';
+		$message = self::customer_message($data);
+
+		wp_mail($email, $subject, $message, $headers);
+	}
+
+	private static function send_admin_notification($data, $headers) {
+		$admin_email = get_option('admin_email');
+		if (!is_email($admin_email)) return;
+
+		$subject = sprintf('Новая запись на консультацию #%d', (int) ($data['appointment_id'] ?? 0));
+		$message = self::admin_message($data);
+
+		wp_mail($admin_email, $subject, $message, $headers);
+	}
+
+	private static function customer_message($data) {
+		$name = (string) ($data['customer_name'] ?? '');
+		$service = (string) ($data['service_title'] ?? '');
+		$starts_at = (string) ($data['starts_at'] ?? '');
+		$ends_at = (string) ($data['ends_at'] ?? '');
+
+		return trim(
+			"Здравствуйте, {$name}!\n\n" .
+			"Ваша запись на консультацию подтверждена.\n\n" .
+			"Услуга: {$service}\n" .
+			"Начало: {$starts_at}\n" .
+			"Окончание: {$ends_at}\n\n" .
+			"Спасибо.\n\n" .
+			"----------------------------------------\n\n" .
+			"Dobrý deň, {$name}!\n\n" .
+			"Vaša rezervácia konzultácie je potvrdená.\n\n" .
+			"Služba: {$service}\n" .
+			"Začiatok: {$starts_at}\n" .
+			"Koniec: {$ends_at}\n\n" .
+			"Ďakujeme."
+		);
+	}
+
+	private static function admin_message($data) {
+		$notes = (string) ($data['notes'] ?? '');
+		$notes = $notes !== '' ? $notes : '—';
+
+		return trim(
+			"Новая запись клиента:\n\n" .
+			"ID записи: " . (int) ($data['appointment_id'] ?? 0) . "\n" .
+			"Услуга: " . (string) ($data['service_title'] ?? '') . "\n" .
+			"Начало: " . (string) ($data['starts_at'] ?? '') . "\n" .
+			"Окончание: " . (string) ($data['ends_at'] ?? '') . "\n" .
+			"Имя клиента: " . (string) ($data['customer_name'] ?? '') . "\n" .
+			"Email клиента: " . (string) ($data['customer_email'] ?? '') . "\n" .
+			"Телефон клиента: " . (string) ($data['customer_phone'] ?? '') . "\n" .
+			"Комментарий: " . $notes
+		);
 	}
 
     public static function admin_get_availability(WP_REST_Request $req) {

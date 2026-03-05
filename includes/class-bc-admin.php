@@ -185,6 +185,7 @@ class BC_Admin {
 						<th>Дата/время</th>
 						<th>Клиент</th>
 						<th>Контакты</th>
+						<th>Кратко запрос</th>
 						<th>Статус</th>
 						<th>Создано</th>
 						<th>Действия</th>
@@ -195,12 +196,13 @@ class BC_Admin {
 							<tr>
 							<td><?php echo (int)$r['id']; ?></td>
 							<td><?php echo esc_html($r['service_label'] ?: ('#'.$r['service_id'])); ?></td>
-							<td><?php echo esc_html($r['starts_at'] . ' — ' . $r['ends_at']); ?></td>
+							<td><?php echo esc_html(mysql2date('d.m.Y H:i:s', $r['starts_at'])); ?></td>
 						<td><?php echo esc_html($r['customer_name']); ?></td>
 						<td>
 							<?php echo esc_html($r['customer_email']); ?><br/>
 							<?php echo esc_html($r['customer_phone']); ?>
 							</td>
+							<td><?php echo esc_html($r['notes'] ?: '—'); ?></td>
 							<td><?php echo esc_html($r['status']); ?></td>
 							<td><?php echo esc_html($r['created_at']); ?></td>
 							<td>
