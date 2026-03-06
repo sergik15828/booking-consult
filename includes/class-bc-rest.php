@@ -115,16 +115,19 @@ class BC_REST {
 
 		if (is_wp_error($id)) return $id;
 
-		$service = BC_DB::get_service($service_id);
-		$service_title = $service['title'] ?? ('#' . $service_id);
-		self::send_booking_emails([
-			'appointment_id' => $id,
-			'service_title' => $service_title,
-			'starts_at' => $starts_at,
-			'ends_at' => $ends_at,
-			'customer_name' => $customer_name,
-			'customer_email' => $customer_email,
-			'customer_phone' => $customer_phone,
+			$service = BC_DB::get_service($service_id);
+			$service_title_ru = $service['title'] ?? ('#' . $service_id);
+			$service_title_sk = self::translate_service_title_sk($service_title_ru);
+			self::send_booking_emails([
+				'appointment_id' => $id,
+				'service_title' => $service_title_ru,
+				'service_title_ru' => $service_title_ru,
+				'service_title_sk' => $service_title_sk,
+				'starts_at' => $starts_at,
+				'ends_at' => $ends_at,
+				'customer_name' => $customer_name,
+				'customer_email' => $customer_email,
+				'customer_phone' => $customer_phone,
 			'notes' => $notes,
 		]);
 
@@ -162,27 +165,59 @@ class BC_REST {
 	}
 
 	private static function customer_message($data) {
-		$name = (string) ($data['customer_name'] ?? '');
-		$service = (string) ($data['service_title'] ?? '');
-		$starts_at = (string) ($data['starts_at'] ?? '');
-		$ends_at = (string) ($data['ends_at'] ?? '');
+			$name = (string) ($data['customer_name'] ?? '');
+			$service_ru = (string) ($data['service_title_ru'] ?? $data['service_title'] ?? '');
+			$service_sk = (string) ($data['service_title_sk'] ?? $service_ru);
+			$starts_at = (string) ($data['starts_at'] ?? '');
+			$ends_at = (string) ($data['ends_at'] ?? '');
 
-		return trim(
-			"Здравствуйте, {$name}!\n\n" .
-			"Ваша запись на консультацию подтверждена.\n\n" .
-			"Услуга: {$service}\n" .
-			"Начало: {$starts_at}\n" .
-			"Окончание: {$ends_at}\n\n" .
-			"Спасибо.\n\n" .
-			"----------------------------------------\n\n" .
-			"Dobrý deň, {$name}!\n\n" .
-			"Vaša rezervácia konzultácie je potvrdená.\n\n" .
-			"Služba: {$service}\n" .
-			"Začiatok: {$starts_at}\n" .
-			"Koniec: {$ends_at}\n\n" .
-			"Ďakujeme."
-		);
-	}
+			return trim(
+				"Здравствуйте, {$name}!\n\n" .
+				"Ваша запись на консультацию подтверждена.\n\n" .
+				"Услуга: {$service_ru}\n" .
+				"Начало: {$starts_at}\n" .
+				"Окончание: {$ends_at}\n\n" .
+				"Спасибо.\n\n" .
+				"----------------------------------------\n\n" .
+				"Dobrý deň, {$name}!\n\n" .
+				"Vaša rezervácia konzultácie je potvrdená.\n\n" .
+				"Služba: {$service_sk}\n" .
+				"Začiatok: {$starts_at}\n" .
+				"Koniec: {$ends_at}\n\n" .
+				"Ďakujeme."
+			);
+		}
+
+	private static function translate_service_title_sk($service_title) {
+			$service_title = trim((string) $service_title);
+			if ($service_title === '') return '';
+
+			$normalized = function_exists('mb_strtolower')
+				? mb_strtolower($service_title, 'UTF-8')
+				: strtolower($service_title);
+
+			$exact = [
+				'вводная встреча' => 'Úvodné stretnutie',
+				'индивидуальная сессия' => 'Individuálne sedenie',
+				'семинар возрождения внутренней силы' => 'Seminár o obnovení vnútornej sily',
+				'экспресс-консультация' => 'Expresná konzultácia',
+			];
+			if (isset($exact[$normalized])) {
+				return $exact[$normalized];
+			}
+
+			if (strpos($normalized, 'ввод') !== false || strpos($normalized, 'intro') !== false) {
+				return 'Úvodné stretnutie';
+			}
+			if (strpos($normalized, 'индив') !== false || strpos($normalized, 'individual') !== false) {
+				return 'Individuálne sedenie';
+			}
+			if (strpos($normalized, 'семинар') !== false || strpos($normalized, 'пакет') !== false || strpos($normalized, 'package') !== false) {
+				return 'Seminár o obnovení vnútornej sily';
+			}
+
+			return $service_title;
+		}
 
 	private static function admin_message($data) {
 		$notes = (string) ($data['notes'] ?? '');
